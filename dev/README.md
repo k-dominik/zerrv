@@ -3,7 +3,7 @@
 ## Create a development environment
 
 ```bash
-conda env create --file dev/environment-dev.py
+conda env create --file dev/environment-dev.yaml
 ```
 
 This will create an environment with the name `zerrv`, that can be activated with `conda activate zerrv`.

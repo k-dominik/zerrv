@@ -3,12 +3,12 @@ channels:
   - defaults
   - conda-forge
 dependencies:
-
+  - aiofiles
   - black
-  - pre_commit
-
-
   - bumpversion
-
+  - pre_commit
   - pytest
-
+  - requests
+  - starlette
+  - uvicorn
+  - z5py
