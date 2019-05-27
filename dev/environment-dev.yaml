@@ -6,6 +6,7 @@ dependencies:
   - aiofiles
   - black
   - bumpversion
+  - pillow
   - pre_commit
   - pytest
   - requests
