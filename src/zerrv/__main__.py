@@ -55,8 +55,24 @@ class BlockCoordinates:
     shape: numpy.array
     block_size: numpy.array
 
-    def get_slicing(self, block_coords: tuple, axisorder: str):
-        return (slice(256, 384), slice(256, 384), slice(0, 1))
+    def get_normalized_slicing(self, t=0, c=0, z=0, y=0, x=0):
+        logger.debug(f"get_normalized_slicing: {t}{c}{z}{y}{x}")
+        block_size = self.block_size
+        return (
+            slice(t * block_size[0], (t + 1) * block_size[0]),
+            slice(c * block_size[1], (c + 1) * block_size[1]),
+            slice(z * block_size[2], (z + 1) * block_size[2]),
+            slice(y * block_size[3], (y + 1) * block_size[3]),
+            slice(x * block_size[4], (x + 1) * block_size[4]),
+        )
+
+    def get_slicing(self, t=0, c=0, z=0, y=0, x=0):
+        normalized_slicing = self.get_normalized_slicing(t, c, z, y, x)
+        inds = ["tczyx".index(a) for a in self.axisorder]
+        logger.debug(
+            f"inds: {inds} - {normalized_slicing} -> {[normalized_slicing[i] for i in inds]}"
+        )
+        return tuple(normalized_slicing[i] for i in inds)
 
 
 def handle_path(path: pathlib.Path):
@@ -85,7 +101,7 @@ class H5N5Dataset:
     def __init__(self, filename, internal_path=""):
         self._internal_path = internal_path
         self._file = h5n5_file(filename)
-        self._axistags = "yxc"
+        self._axistags = "zyxc"
 
     @property
     def axistags(self):
@@ -109,13 +125,56 @@ class H5N5Dataset:
     def normalized_chunk_shape(self):
         inds = [self.normalized_axistags.index(x) for x in self.axistags]
         new_chunk_shape_shape = [0, 0, 0, 0, 0]
-        for ind, extent in zip(inds, self.raw().chunks):
-            new_chunk_shape_shape[ind] = extent
-
+        # for ind, extent in zip(inds, self.raw().chunks):
+        #     new_chunk_shape_shape[ind] = extent
+        new_chunk_shape_shape = [0, 1, 1, 128, 128]
         return tuple(new_chunk_shape_shape)
 
     def raw(self):
         return self._file[self._internal_path]
+
+
+@app.route(
+    "/{path:path}/tilelayer/{level}/{t:int}/{c:int}/{z:int}/{y:int}/{x:int}.png",
+    methods=["GET"],
+)
+async def tilelayer(request):
+    logger.debug(f"doing tilelayer request at {request.path_params['path']}")
+    logger.debug(
+        f"requesting tile (tczyx): {[request.path_params[a] for a in 'tczyx']}"
+    )
+    p = pathlib.Path(request.path_params["path"])
+
+    external, internal, is_h5_n5 = handle_path(p)
+    logger.debug(f"external: {external}, internal: {internal}, is_h5_n5: {is_h5_n5}")
+
+    if not external.exists():
+        return JSONResponse(
+            {"external": str(external), "internal": str(internal), "b": is_h5_n5}
+        )
+    if not is_h5_n5:
+        return JSONResponse(
+            {"external": str(external), "internal": str(internal), "b": is_h5_n5}
+        )
+    z5dataset = H5N5Dataset(external, internal)
+    axisorder = z5dataset.axistags
+    bc = BlockCoordinates(
+        axisorder=z5dataset.axistags,
+        shape=z5dataset.normalized_shape,
+        block_size=z5dataset.normalized_chunk_shape,
+    )
+    block_coords = {k: request.path_params[k] for k in z5dataset.normalized_axistags}
+    slicing = bc.get_slicing(**block_coords)
+    logger.debug(
+        f"getting data with slicing: {slicing} - shape: {z5dataset.raw().shape}"
+    )
+    data = z5dataset.raw()[slicing]
+    logger.debug(f"data.shape: {data.shape}")
+    img = Image.fromarray(data.squeeze(), mode="P")
+    bo = io.BytesIO()
+    img.save(bo, format="PNG")
+    bo.seek(0)
+    return StreamingResponse(bo, media_type="image/png")
 
 
 @app.route("/{path:path}/info.json", methods=["GET"])
@@ -188,23 +247,6 @@ async def query(request):
         ret_dict = list(g.values())
 
     return MyJSONResponse(ret_dict)
-
-
-@app.route("/{filename}/tilelayer/{t}/{c}/{z}/{y}/{x}.png", methods=["GET"])
-async def tilelayer(request):
-    z5file = z5py.File(request.path_params["filename"], "r")
-    axisorder = "xyc"
-    bc = BlockCoordinates(
-        axisorder=axisorder, shape=z5file["data"].shape, block_size=z5file.block_size
-    )
-    block_coords = tuple(request.path_params[k] for k in axisorder)
-    slicing = bc.get_slicing(block_coords=block_coords, axisorder=axisorder)
-    data = z5file["data"][slicing]
-    img = Image.fromarray(data.squeeze(), mode="P")
-    bo = io.BytesIO()
-    img.save(bo, format="PNG")
-    bo.seek(0)
-    return StreamingResponse(bo, media_type="image/png")
 
 
 if __name__ == "__main__":
