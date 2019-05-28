@@ -81,6 +81,43 @@ def h5n5_file(filename):
         return h5py.File(filename, "r")
 
 
+class H5N5Dataset:
+    def __init__(self, filename, internal_path=""):
+        self._internal_path = internal_path
+        self._file = h5n5_file(filename)
+        self._axistags = "yxc"
+
+    @property
+    def axistags(self):
+        logger.warning("not really implemented... yo")
+        return self._axistags
+
+    @property
+    def normalized_axistags(self):
+        return "tczyx"
+
+    @property
+    def normalized_shape(self):
+        inds = [self.normalized_axistags.index(x) for x in self.axistags]
+        new_shape = [0, 0, 0, 0, 0]
+        for ind, extent in zip(inds, self.raw().shape):
+            new_shape[ind] = extent
+
+        return tuple(new_shape)
+
+    @property
+    def normalized_chunk_shape(self):
+        inds = [self.normalized_axistags.index(x) for x in self.axistags]
+        new_chunk_shape_shape = [0, 0, 0, 0, 0]
+        for ind, extent in zip(inds, self.raw().chunks):
+            new_chunk_shape_shape[ind] = extent
+
+        return tuple(new_chunk_shape_shape)
+
+    def raw(self):
+        return self._file[self._internal_path]
+
+
 @app.route("/{path:path}/info.json", methods=["GET"])
 async def info(request):
     logger.debug(f"doing info request at {request.path_params['path']}")
@@ -99,15 +136,15 @@ async def info(request):
         )
 
     logger.debug(f"trying to open file")
-    h5n5file = h5n5_file(external)
-    d = h5n5file[internal]
+    h5n5_dataset = H5N5Dataset(external, internal)
+    d = h5n5_dataset.raw()
     assert isinstance(d, (z5py.dataset.Dataset, h5py.Dataset))
 
-    x_str = "{t}/{c}/{z}/{y}/{x}.png"
+    x_str = "{" + "}/{".join(h5n5_dataset.normalized_axistags) + "}.png"
     return JSONResponse(
         {
-            "shape": d.shape,
-            "block_size": d.chunks,
+            "shape": h5n5_dataset.normalized_shape,
+            "block_size": h5n5_dataset.normalized_chunk_shape,
             "url": f"{external}/{internal}/{x_str}",
         }
     )
