@@ -6,19 +6,12 @@ setup(
     author="Dominik Kutra",
     author_email="author email address",
     license="MIT",
-    description="python server to expose zarr volumes",
+    description="http server to expose zarr/n5/hdf5 volumes",
     # long_description=description,
     # url='https://...',
     package_dir={"": "src"},
     packages=find_packages("./src"),
     include_package_data=True,
-    install_requires=[
-        # 'dep1>=1.0,<2',
-        # 'dep2>=2'
-    ],
-    entry_points={
-        "console_scripts": [
-            "zerrv = zerrv.__main__:main"
-        ]
-    },
+    install_requires=["aiofiles", "h5py", "numpy", "starlette", "uvicorn" "z5py"],
+    entry_points={"console_scripts": ["zerrv = zerrv.__main__:main"]},
 )
