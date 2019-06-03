@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import List, Iterator
+from typing import List, Iterator, Tuple, Union
 
+import pathlib
+
+import h5py
+import z5py
 from PIL import Image as PilImage
 import numpy as np
 
@@ -11,6 +15,11 @@ from ilastik.array5d import Array5D, Point5D, Shape5D, Slice5D
 from ilastik.utility import JsonSerializable
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 @enum.unique
 class AddressMode(IntEnum):
     BLACK = 0
@@ -18,7 +27,7 @@ class AddressMode(IntEnum):
     WRAP = enum.auto()
 
 
-class DataSource(JsonSerializable):
+class DataSource:
     """An entity able to retrieve raw Array5D's, usually from disk or network"""
 
     def __init__(self, url: str):
@@ -127,6 +136,75 @@ class DataSourceSlice(Slice5D):
 
     def mod_tile(self, tile_shape: Shape5D = None) -> "DataSourceSlice":
         return super().mod_tile(tile_shape or self.data_source.tile_shape)
+
+
+def h5n5_file(filename: str) -> Union[h5py.File, z5py.File]:
+    if filename.match("*.n5"):
+        return z5py.File(filename, "r")
+
+    elif filename.match("*.h5"):
+        return h5py.File(filename, "r")
+
+
+def handle_path(path: pathlib.Path) -> Tuple[pathlib.Path, str, bool]:
+    pathstr = str(path)
+    logger.debug(f"handling path: {pathstr}")
+    if any(p.endswith(".n5") for p in path.parts):
+        *external, internal = pathstr.split(".n5")
+        logger.debug(f"external: {external}, internal: {internal}")
+        external_path = "".join(external) + ".n5"
+        internal.lstrip("/")
+        return pathlib.Path(external_path), internal, True
+    elif path.match("*.h5"):
+        raise NotImplementedError()
+    else:
+        return path, "", False
+
+
+class H5N5Datasource(DataSource):
+    def __init__(self, url: str):
+        super().__init__(url)
+        external_path, internal_path, is_h5n5 = handle_path(pathlib.Path(url))
+        assert is_h5n5, "This class only handles n5/h5 files"
+        self.external_path = external_path
+        self.internal_path = internal_path
+        self._filep = h5n5_file(external_path)
+        self._dataset = self._filep[internal_path]
+        assert isinstance(self._dataset, (z5py.dataset.Dataset, h5py.Dataset))
+        axiskeys = self.determine_axistags(self._dataset.shape)
+        self._data = Array5D(self._dataset, axiskeys=axiskeys)
+
+    @staticmethod
+    def determine_axistags(shape: List[int]) -> str:
+        """
+        # HACK: for now just assume some axistags for a given shape...
+        """
+        axisorders = {2: "yx", 3: "zyx", 4: "czyx", 5: "tczyx"}
+        ndim = len(shape)
+
+        if ndim in [0, 1]:
+            raise ValueError(f"Got 'ndim' == {ndim}. {ndim}-D data not yet supported")
+        elif ndim > 5:
+            raise ValueError(f"Got 'ndim' == {ndim} dim. No Support for data with more than 5 " "dimensions")
+
+        axisorder = axisorders[ndim]
+
+        if ndim == 3 and shape[0] <= 4:
+            # Special case: If the 3rd dim is small, assume it's 'c', not 'z'
+            axisorder = "cyx"
+
+        return axisorder
+
+    @property
+    def shape(self):
+        return self._data.shape
+
+    @property
+    def dtype(self):
+        return self._data.dtype
+
+    def do_retrieve(self, roi: Slice5D):
+        return self._data.cut(roi)
 
 
 class FlatDataSource(DataSource):
