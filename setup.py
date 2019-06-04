@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="zerrv",
-    version="0.1.0dev1",
+    version="0.1.1dev0",
     author="Dominik Kutra",
     author_email="author email address",
     license="MIT",
