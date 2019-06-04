@@ -1,10 +1,10 @@
 import itertools
 from typing import Iterator, List, Tuple
 
-import numpy as np
+import numpy
 from PIL import Image as PilImage
 
-from .point5D import Point5D, Slice5D, Shape5D
+from zerrv.external.array5d.point5D import Point5D, Slice5D, Shape5D
 
 
 import logging
@@ -81,16 +81,16 @@ class RawShape:
 
 
 class Array5D:
-    """A wrapper around np.ndarray with labeled axes. Enforces 5D, even if some
+    """A wrapper around numpy.ndarray with labeled axes. Enforces 5D, even if some
     dimensions are of size 1. Sliceable with Slice5D's"""
 
-    def __init__(self, arr: np.ndarray, axiskeys: str):
+    def __init__(self, arr: numpy.ndarray, axiskeys: str):
         assert len(arr.shape) == len(axiskeys)
         missing_keys = [key for key in Point5D.LABELS if key not in axiskeys]
         self._original_axiskeys = axiskeys
         self._axiskeys = "".join(missing_keys) + axiskeys
         assert sorted(self._axiskeys) == sorted(Point5D.LABELS)
-        slices = tuple([np.newaxis for key in missing_keys] + [...])
+        slices = tuple([numpy.newaxis for key in missing_keys] + [...])
         self._data = arr[slices]
 
     @classmethod
@@ -103,7 +103,7 @@ class Array5D:
     @classmethod
     def allocate(cls, shape: Shape5D, dtype, axiskeys: str = Point5D.LABELS, value: int = None):
         assert sorted(axiskeys) == sorted(Point5D.LABELS)
-        arr = np.empty(shape.to_tuple(axiskeys), dtype=dtype)
+        arr = numpy.empty(shape.to_tuple(axiskeys), dtype=dtype)
         arr = cls(arr, axiskeys)
         if value is not None:
             arr._data[...] = value
@@ -173,31 +173,31 @@ class Array5D:
             slc = Slice5D(**{k: v for k, v in zip(iteration_axes, indices)})
             source_slice = self.cut(slc).raw(self.axiskeys)
             dest_slice = normalized.cut(slc).raw(self.axiskeys)
-            data_range = np.amax(source_slice) - np.amin(source_slice)
+            data_range = numpy.amax(source_slice) - numpy.amin(source_slice)
             if data_range != 0:
-                dest_slice[...] = (source_slice / data_range * np.iinfo(self.dtype).max).astype(self.dtype)
+                dest_slice[...] = (source_slice / data_range * numpy.iinfo(self.dtype).max).astype(self.dtype)
             else:
                 dest_slice[...] = source_slice
         return normalized
 
-    def rebuild(self, arr: np.array, axiskeys: str) -> "Array5D":
+    def rebuild(self, arr: numpy.array, axiskeys: str) -> "Array5D":
         return self.__class__(arr, axiskeys)
 
     def moveaxis(self, source: str, destination: str):
         source_indices = tuple(self.axiskeys.index(k) for k in source)
         dest_indices = tuple(self.axiskeys.index(k) for k in destination)
-        moved_arr = np.moveaxis(self._data, source=source_indices, destination=dest_indices)
+        moved_arr = numpy.moveaxis(self._data, source=source_indices, destination=dest_indices)
         return self.rebuild(moved_arr, axiskeys=self.rawshape.swapped(source, destination).axiskeys)
 
-    def raw(self, axiskeys: str) -> np.ndarray:
-        """Returns a raw view of the underlying np.ndarray, containing only the axes
+    def raw(self, axiskeys: str) -> numpy.ndarray:
+        """Returns a raw view of the underlying numpy.ndarray, containing only the axes
         identified by and ordered like 'axiskeys'"""
         logger.debug(self.shape)
         assert all(self.shape[axis] == 1 for axis in Point5D.LABELS if axis not in axiskeys)
         swapped = self.reordered(axiskeys)
 
         slices = tuple((slice(None) if k in axiskeys else 0) for k in swapped.axiskeys)
-        return np.asarray(swapped._data[slices])
+        return numpy.asarray(swapped._data[slices])
 
     def linear_raw(self):
         """Returns a raw view with one spatial dimension and one channel dimension"""
@@ -218,7 +218,7 @@ class Array5D:
             else:
                 new_axes += axis
 
-        moved_arr = np.moveaxis(self._data, source=source_indices, destination=dest_indices)
+        moved_arr = numpy.moveaxis(self._data, source=source_indices, destination=dest_indices)
 
         return self.rebuild(moved_arr, axiskeys=new_axes)
 
@@ -245,19 +245,19 @@ class Array5D:
         if not isinstance(other, Array5D) or self.shape != other.shape:
             raise Exception(f"Comparing Array5D {self} with {other}")
 
-        return np.all(self._data == other._data)
+        return numpy.all(self._data == other._data)
 
 
 class LazyArray5D:
     """An array that will not request the whole data upon creation, todo: needs marriage, or shared base class"""
 
-    def __init__(self, arr: np.ndarray, axiskeys: str):
+    def __init__(self, arr: numpy.ndarray, axiskeys: str):
         assert len(arr.shape) == len(axiskeys)
         missing_keys = [key for key in Point5D.LABELS if key not in axiskeys]
         self._original_axiskeys = axiskeys
         self._axiskeys = "".join(missing_keys) + axiskeys
         assert sorted(self._axiskeys) == sorted(Point5D.LABELS)
-        self._slices = tuple([np.newaxis for key in missing_keys] + [...])
+        self._slices = tuple([numpy.newaxis for key in missing_keys] + [...])
         self._data = arr
 
     def __repr__(self):
@@ -266,7 +266,7 @@ class LazyArray5D:
     @classmethod
     def allocate(cls, shape: Shape5D, dtype, axiskeys: str = Point5D.LABELS, value: int = None):
         assert sorted(axiskeys) == sorted(Point5D.LABELS)
-        arr = np.empty(shape.to_tuple(axiskeys), dtype=dtype)
+        arr = numpy.empty(shape.to_tuple(axiskeys), dtype=dtype)
         arr = cls(arr, axiskeys)
         if value is not None:
             arr._data[...] = value
@@ -340,14 +340,14 @@ class LazyArray5D:
             slc = Slice5D(**{k: v for k, v in zip(iteration_axes, indices)})
             source_slice = self.cut(slc).raw(self.axiskeys)
             dest_slice = normalized.cut(slc).raw(self.axiskeys)
-            data_range = np.amax(source_slice) - np.amin(source_slice)
+            data_range = numpy.amax(source_slice) - numpy.amin(source_slice)
             if data_range != 0:
-                dest_slice[...] = (source_slice / data_range * np.iinfo(self.dtype).max).astype(self.dtype)
+                dest_slice[...] = (source_slice / data_range * numpy.iinfo(self.dtype).max).astype(self.dtype)
             else:
                 dest_slice[...] = source_slice
         return normalized
 
-    def rebuild(self, arr: np.array, axiskeys: str) -> "Array5D":
+    def rebuild(self, arr: numpy.array, axiskeys: str) -> "Array5D":
         return self.__class__(arr, axiskeys)
 
     def reordered(self, axiskeys: str):
@@ -363,7 +363,7 @@ class LazyArray5D:
             else:
                 new_axes += axis
 
-        moved_arr = np.moveaxis(self._data, source=source_indices, destination=dest_indices)
+        moved_arr = numpy.moveaxis(self._data, source=source_indices, destination=dest_indices)
 
         return self.rebuild(moved_arr, axiskeys=new_axes)
 
@@ -397,7 +397,7 @@ class LazyArray5D:
         if not isinstance(other, LazyArray5D) or self._shape != other._shape:
             raise Exception(f"Comparing Array5D {self} with {other}")
 
-        return np.all(self._data == other._data)
+        return numpy.all(self._data == other._data)
 
 
 class StaticData(Array5D):
@@ -460,7 +460,7 @@ class Image(StaticData, FlatData):
             yield ScalarImage(channel._data, self.axiskeys)
 
     def as_pil_image(self):
-        assert self.dtype == np.uint8
+        assert self.dtype == numpy.uint8
         raw_axis = "yx" if self.shape.is_scalar else "yxc"
         return PilImage.fromarray(self.raw(raw_axis))
 
@@ -480,5 +480,5 @@ class StaticLine(StaticData, LinearData):
         axes = self.squeezed_shape.axiskeys
         concat_axis = self.squeezed_shape.to_scalar().axiskeys
         raw_all = [self.raw(axes)] + [o.raw(axes) for o in others]
-        data = np.concatenate(raw_all, axis=axes.index(concat_axis))
+        data = numpy.concatenate(raw_all, axis=axes.index(concat_axis))
         return self.rebuild(data, axes)

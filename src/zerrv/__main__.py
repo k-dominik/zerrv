@@ -18,6 +18,9 @@ import z5py
 import typing
 
 
+from zerrv.util import h5n5_file, handle_path, H5N5JsonEncoder
+
+
 from dataclasses import dataclass
 
 
@@ -26,46 +29,15 @@ logger = logging.getLogger(__name__)
 app = Starlette(debug=True)
 
 
-class H5N5JsonEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, (z5py.group.Group, h5py.Group)):
-            return {"name": obj.name, "type": "group"}
-        if isinstance(obj, (z5py.dataset.Dataset, h5py.Dataset)):
-            # HACK
-            return {"name": obj.path.split("/")[-1], "type": "dataset"}
-        else:
-            json.JSONEncoder.default(self, obj)
-
-
 class MyJSONResponse(JSONResponse):
+    """Response class that uses custom JSON encoder"""
+
     media_type = "application/json"
 
     def render(self, content: typing.Any) -> bytes:
         return json.dumps(
             content, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":"), cls=H5N5JsonEncoder
         ).encode("utf-8")
-
-
-def handle_path(path: pathlib.Path):
-    pathstr = str(path)
-    logger.debug(f"pathstr: {pathstr}")
-    if any(p.endswith(".n5") for p in path.parts):
-        *external, internal = pathstr.split(".n5")
-        logger.debug(f"external: {external}, internal: {internal}")
-        external_path = "".join(external) + ".n5"
-        internal.lstrip("/")
-        return pathlib.Path(external_path), internal, True
-    elif path.match("*.h5"):
-        raise NotImplementedError()
-    else:
-        return path, "", False
-
-
-def h5n5_file(filename):
-    if filename.match("*.n5"):
-        return z5py.File(filename, "r")
-    elif filename.match("*.h5"):
-        return h5py.File(filename, "r")
 
 
 @app.route("/{path:path}/tilelayer/{level}/{t:int}/{c:int}/{z:int}/{y:int}/{x:int}.png", methods=["GET"])

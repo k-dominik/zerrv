@@ -12,6 +12,7 @@ import enum
 from enum import IntEnum
 
 from zerrv.external.array5d import Array5D, Point5D, Shape5D, Slice5D, Chunk5D, LazyArray5D
+from zerrv.util import handle_path, h5n5_file
 
 import logging
 
@@ -134,29 +135,6 @@ class DataSourceSlice(Slice5D):
 
     def mod_tile(self, tile_shape: Shape5D = None) -> "DataSourceSlice":
         return super().mod_tile(tile_shape or self.data_source.tile_shape)
-
-
-def h5n5_file(filename: str) -> Union[h5py.File, z5py.File]:
-    if filename.match("*.n5"):
-        return z5py.File(filename, "r")
-
-    elif filename.match("*.h5"):
-        return h5py.File(filename, "r")
-
-
-def handle_path(path: pathlib.Path) -> Tuple[pathlib.Path, str, bool]:
-    pathstr = str(path)
-    logger.debug(f"handling path: {pathstr}")
-    if any(p.endswith(".n5") for p in path.parts):
-        *external, internal = pathstr.split(".n5")
-        logger.debug(f"external: {external}, internal: {internal}")
-        external_path = "".join(external) + ".n5"
-        internal.lstrip("/")
-        return pathlib.Path(external_path), internal, True
-    elif path.match("*.h5"):
-        raise NotImplementedError()
-    else:
-        return path, "", False
 
 
 class H5N5DataSource(DataSource):
