@@ -11,9 +11,7 @@ import numpy as np
 import enum
 from enum import IntEnum
 
-from ilastik.array5d import Array5D, Point5D, Shape5D, Slice5D
-from ilastik.utility import JsonSerializable
-
+from zerrv.external.array5d import Array5D, Point5D, Shape5D, Slice5D, Chunk5D, LazyArray5D
 
 import logging
 
@@ -161,7 +159,7 @@ def handle_path(path: pathlib.Path) -> Tuple[pathlib.Path, str, bool]:
         return path, "", False
 
 
-class H5N5Datasource(DataSource):
+class H5N5DataSource(DataSource):
     def __init__(self, url: str):
         super().__init__(url)
         external_path, internal_path, is_h5n5 = handle_path(pathlib.Path(url))
@@ -172,7 +170,7 @@ class H5N5Datasource(DataSource):
         self._dataset = self._filep[internal_path]
         assert isinstance(self._dataset, (z5py.dataset.Dataset, h5py.Dataset))
         axiskeys = self.determine_axistags(self._dataset.shape)
-        self._data = Array5D(self._dataset, axiskeys=axiskeys)
+        self._data = LazyArray5D(self._dataset, axiskeys=axiskeys[::-1])
 
     @staticmethod
     def determine_axistags(shape: List[int]) -> str:
@@ -205,6 +203,19 @@ class H5N5Datasource(DataSource):
 
     def do_retrieve(self, roi: Slice5D):
         return self._data.cut(roi)
+
+    def tile_shape(self) -> Chunk5D:
+        chunks = self._dataset.chunks
+        original_axiskeys = self._data._original_axiskeys
+        # assert len(chunks) == len(original_axiskeys)
+        logger.debug(f"chunks: {chunks}")
+        logger.debug(f"original_axiskeys: {original_axiskeys}")
+
+        return Chunk5D(**{k: v for k, v in zip(original_axiskeys, chunks)})
+
+    @property
+    def axiskeys(self):
+        return self._data._axiskeys
 
 
 class FlatDataSource(DataSource):

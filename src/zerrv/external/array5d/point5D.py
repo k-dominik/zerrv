@@ -3,10 +3,13 @@ from itertools import product
 import numpy as np
 from typing import Dict, Tuple, Iterator, List
 
-from ilastik.utility import JsonSerializable
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-class Point5D(JsonSerializable):
+class Point5D:
     LABELS = "txyzc"
     SPATIAL_LABELS = "xyz"
     LABEL_MAP = {label: index for index, label in enumerate(LABELS)}
@@ -52,39 +55,19 @@ class Point5D(JsonSerializable):
         return self.__repr__()
 
     @classmethod
-    def inf(
-        cls,
-        *,
-        t: float = INF,
-        x: float = INF,
-        y: float = INF,
-        z: float = INF,
-        c: float = INF,
-    ):
+    def inf(cls, *, t: float = INF, x: float = INF, y: float = INF, z: float = INF, c: float = INF):
         return cls(t=t, x=x, y=y, z=z, c=c)
 
     @classmethod
-    def ninf(
-        cls,
-        *,
-        t: float = NINF,
-        x: float = NINF,
-        y: float = NINF,
-        z: float = NINF,
-        c: float = NINF,
-    ):
+    def ninf(cls, *, t: float = NINF, x: float = NINF, y: float = NINF, z: float = NINF, c: float = NINF):
         return cls(t=t, x=x, y=y, z=z, c=c)
 
     @classmethod
-    def zero(
-        cls, *, t: float = 0, x: float = 0, y: float = 0, z: float = 0, c: float = 0
-    ):
+    def zero(cls, *, t: float = 0, x: float = 0, y: float = 0, z: float = 0, c: float = 0):
         return cls(t=t or 0, x=x or 0, y=y or 0, z=z or 0, c=c or 0)
 
     @classmethod
-    def one(
-        cls, *, t: float = 1, x: float = 1, y: float = 1, z: float = 1, c: float = 1
-    ):
+    def one(cls, *, t: float = 1, x: float = 1, y: float = 1, z: float = 1, c: float = 1):
         return cls(t=t, x=x, y=y, z=z, c=c)
 
     def __getitem__(self, key):
@@ -203,11 +186,7 @@ class Shape5D(Point5D):
 
     @property
     def present_spatial_axes(self) -> Dict[str, float]:
-        return {
-            k: v
-            for k, v in self.spatial_axes.items()
-            if k not in self.missing_spatial_axes
-        }
+        return {k: v for k, v in self.spatial_axes.items() if k not in self.missing_spatial_axes}
 
     @property
     def is_static(self):
@@ -241,7 +220,28 @@ class Shape5D(Point5D):
         return cls(**{k: v or 1 for k, v in point.to_dict().items()})
 
 
-class Slice5D(JsonSerializable):
+class Chunk5D(Shape5D):
+    def __init__(cls, *, t: int = 0, x: int = 0, y: int = 0, z: int = 0, c: int = 0):
+        super().__init__(t=t, x=x, y=y, z=z, c=c)
+
+    @property
+    def missing_spatial_axes(self):
+        return {k: v for k, v in self.spatial_axes.items() if v == 0}
+
+    @property
+    def is_static(self):
+        return self.t == 0
+
+    @property
+    def is_scalar(self):
+        return self.c == 0
+
+    @classmethod
+    def from_point(cls, point: Point5D):
+        return cls(**{k: v or 0 for k, v in point.to_dict().items()})
+
+
+class Slice5D:
     """A labeled 5D slice"""
 
     SLICE_DTYPE = np.int64
@@ -253,15 +253,7 @@ class Slice5D(JsonSerializable):
         i = int(slc)
         return slice(i, i + 1)
 
-    def __init__(
-        self,
-        *,
-        t=slice(None),
-        c=slice(None),
-        x=slice(None),
-        y=slice(None),
-        z=slice(None),
-    ):
+    def __init__(self, *, t=slice(None), c=slice(None), x=slice(None), y=slice(None), z=slice(None)):
         self._slices = {
             "t": self.ensure_slice(t),
             "c": self.ensure_slice(c),
@@ -270,14 +262,9 @@ class Slice5D(JsonSerializable):
             "z": self.ensure_slice(z),
         }
 
-        self.start = Point5D.zero(
-            **{label: slc.start for label, slc in self._slices.items()}
-        )
+        self.start = Point5D.zero(**{label: slc.start for label, slc in self._slices.items()})
         self.stop = Point5D.inf(
-            **{
-                label: Point5D.INF if slc.stop is None else slc.stop
-                for label, slc in self._slices.items()
-            }
+            **{label: Point5D.INF if slc.stop is None else slc.stop for label, slc in self._slices.items()}
         )
 
     def __eq__(self, other):
@@ -285,15 +272,7 @@ class Slice5D(JsonSerializable):
             return False
         return self._slices == other._slices
 
-    def rebuild(
-        self,
-        *,
-        t=slice(None),
-        c=slice(None),
-        x=slice(None),
-        y=slice(None),
-        z=slice(None),
-    ):
+    def rebuild(self, *, t=slice(None), c=slice(None), x=slice(None), y=slice(None), z=slice(None)):
         return self.__class__(t=t, c=c, x=x, y=y, z=z)
 
     def __hash__(self):
@@ -410,9 +389,7 @@ class Slice5D(JsonSerializable):
         assert self.stop[axis] != Point5D.INF
         assert self.shape[axis] % step == 0
         for axis_value in range(int(self.start[axis]), int(self.stop[axis]), step):
-            params = self.with_coord(
-                **{axis: slice(axis_value, axis_value + step)}
-            ).to_dict()
+            params = self.with_coord(**{axis: slice(axis_value, axis_value + step)}).to_dict()
             yield self.rebuild(**params)
 
     def frames(self) -> Iterator["Slice5D"]:
@@ -445,9 +422,7 @@ class Slice5D(JsonSerializable):
         return Shape5D(**(self.stop - self.start).to_dict())
 
     def clamped(self, *, minimum: Point5D = None, maximum: Point5D = None) -> "Slice5D":
-        return self.from_start_stop(
-            self.start.clamped(minimum, maximum), self.stop.clamped(minimum, maximum)
-        )
+        return self.from_start_stop(self.start.clamped(minimum, maximum), self.stop.clamped(minimum, maximum))
 
     def clamped_with_slice(self, slc: "Slice5D"):
         return self.clamped(minimum=slc.start, maximum=slc.stop)
@@ -481,13 +456,21 @@ class Slice5D(JsonSerializable):
 
     def to_tuple(self, axis_order: str, dtype=SLICE_DTYPE):
         assert self.is_defined()
-        return (
-            self.start.to_tuple(axis_order, dtype),
-            self.stop.to_tuple(axis_order, dtype),
-        )
+        return (self.start.to_tuple(axis_order, dtype), self.stop.to_tuple(axis_order, dtype))
 
     def __str__(self):
         return self.__repr__()
 
     def __repr__(self):
         return str([self.start, self.stop])
+
+
+class Blocking5D:
+    def __init__(self, block_shape: Chunk5D):
+        self._block_shape = block_shape
+
+    def get_slice(self, block_coordinates: Point5D) -> Slice5D:
+        logger.debug(f"generating slice; {self._block_shape},., {block_coordinates}")
+        start = self._block_shape * Chunk5D.from_point(block_coordinates)
+        stop = self._block_shape * (Chunk5D.from_point(block_coordinates) + 1)
+        return Slice5D(**Slice5D.make_slices(start, stop))
