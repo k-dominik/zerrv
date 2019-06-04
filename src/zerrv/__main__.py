@@ -1,6 +1,7 @@
+from argparse import ArgumentParser, Action
 from PIL import Image
-from external.array5d import Array5D, Point5D, Chunk5D, Blocking5D
-from external.data_source import H5N5DataSource
+from zerrv.external.array5d import Array5D, Point5D, Chunk5D, Blocking5D
+from zerrv.external.data_source import H5N5DataSource
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.responses import Response, FileResponse, StreamingResponse
@@ -21,9 +22,6 @@ import typing
 from zerrv.util import h5n5_file, handle_path, H5N5JsonEncoder
 
 
-from dataclasses import dataclass
-
-
 logger = logging.getLogger(__name__)
 
 app = Starlette(debug=True)
@@ -42,9 +40,19 @@ class MyJSONResponse(JSONResponse):
 
 @app.route("/{path:path}/tilelayer/{level}/{t:int}/{c:int}/{z:int}/{y:int}/{x:int}.png", methods=["GET"])
 async def tilelayer(request):
+    """Endpoint to serve a single channel tile layer to openlayers
+
+    URL params:
+      level: zoom-level, ignored atm.
+      t: time-point -> not blocked
+      c: channel -> not blocked
+      z: z-slice in pixel/voxel coordinates -> not blocked
+      y: _block_ number in y-direction
+      x: _block_ number in x-direction
+    """
     logger.debug(f"doing tilelayer request at {request.path_params['path']}")
     logger.debug(f"requesting tile (tczyx): {[request.path_params[a] for a in 'tczyx']}")
-    p = pathlib.Path(request.path_params["path"])
+    p = request["app"].serve_rootpath / request.path_params["path"]
 
     external_path, internal_path, is_h5_n5 = handle_path(p)
     logger.debug(f"external_path: {external_path}, internal_path: {internal_path}, is_h5_n5: {is_h5_n5}")
@@ -74,7 +82,7 @@ async def tilelayer(request):
 @app.route("/{path:path}/info.json", methods=["GET"])
 async def info(request):
     logger.debug(f"doing info request at {request.path_params['path']}")
-    p = pathlib.Path(request.path_params["path"])
+    p = request["app"].serve_rootpath / request.path_params["path"]
 
     external, internal, is_h5_n5 = handle_path(p)
     logger.debug(f"external: {external}, internal: {internal}, is_h5_n5: {is_h5_n5}")
@@ -102,7 +110,7 @@ async def info(request):
 @app.route("/{path:path}", methods=["GET"])
 async def query(request):
     logger.debug(f"doing parse_request at {request.path_params['path']}")
-    p = pathlib.Path(request.path_params["path"])
+    p = request["app"].serve_rootpath / request.path_params["path"]
     print(f"{p}, {type(p)}")
     if not p.exists():
         return {}
@@ -139,6 +147,41 @@ async def query(request):
     return MyJSONResponse(ret_dict)
 
 
-if __name__ == "__main__":
+def parse_args():
+    class ExistingPathAction(Action):
+        def __init__(self, option_strings, dest, type=pathlib.Path, **kwargs):
+            super().__init__(option_strings, dest, **kwargs)
+            assert type == pathlib.Path
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            assert isinstance(values, str), "only one value may be supplied here"
+            p = pathlib.Path(values)
+            if not p.exists():
+                raise IOError(f"Path {p} does not exist!")
+            p = p.absolute()
+            setattr(namespace, self.dest, p)
+
+    p = ArgumentParser()
+
+    p.add_argument("--host", default="0.0.0.0", help="host address")
+    p.add_argument("--port", default=8978, type=int, help="port number")
+    p.add_argument(
+        "rootpath", type=pathlib.Path, action=ExistingPathAction, help="path from which to start serving files."
+    )
+
+    args = p.parse_args()
+
+    return args
+
+
+def main():
     logging.basicConfig(level=logging.DEBUG)
-    uvicorn.run(app, host="0.0.0.0", port=8000, loop="asyncio")
+    args = parse_args()
+
+    logger.info(f"serving directory {args.rootpath} from http://{args.host}:{args.port}")
+    app.serve_rootpath = args.rootpath
+    uvicorn.run(app, host=args.host, port=args.port, loop="asyncio")
+
+
+if __name__ == "__main__":
+    main()

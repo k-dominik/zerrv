@@ -12,6 +12,6 @@ setup(
     package_dir={"": "src"},
     packages=find_packages("./src"),
     include_package_data=True,
-    install_requires=["aiofiles", "h5py", "numpy", "starlette", "uvicorn", "z5py"],
+    install_requires=["aiofiles", "h5py", "numpy", "pillow", "starlette", "uvicorn", "z5py"],
     entry_points={"console_scripts": ["zerrv = zerrv.__main__:main"]},
 )

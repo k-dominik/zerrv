@@ -5,6 +5,11 @@ import pathlib
 import z5py
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class H5N5JsonEncoder(json.JSONEncoder):
     """JSON encoder for h5/n5 dataset/group objects
 
